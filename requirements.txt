@@ -14,3 +14,11 @@ sentence-transformers
 python-dotenv
 groq
 llama-index-core
+
+streamlit
+python-dotenv
+PyMuPDF
+numpy
+sentence-transformers
+groq
+llama-index-core

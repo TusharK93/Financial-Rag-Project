@@ -1,9 +1,7 @@
 
 import streamlit as st
 from dotenv import load_dotenv
-
 from rag import FinanceRAG, answer_with_llm
-
 
 load_dotenv(override=False)
 
@@ -12,7 +10,6 @@ st.set_page_config(
     page_icon="📊",
     layout="wide",
 )
-
 st.title("📊 Finance RAG Assistant")
 st.caption(
     "Ask questions about your financial reports using document-grounded answers."
