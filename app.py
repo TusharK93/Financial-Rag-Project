@@ -1,4 +1,6 @@
 
+import os
+
 import streamlit as st
 from dotenv import load_dotenv
 from rag import FinanceRAG, answer_with_llm
@@ -10,25 +12,32 @@ st.set_page_config(
     page_icon="📊",
     layout="wide",
 )
+
 st.title("📊 Finance RAG Assistant")
 st.caption(
     "Ask questions about your financial reports using document-grounded answers."
 )
 
-# Keep the engine and chat history between Streamlit reruns.
+# --------------------------------------------------
+# Session state
+# --------------------------------------------------
 if "finance_rag" not in st.session_state:
     st.session_state.finance_rag = FinanceRAG(use_reranker=False)
 
 if "indexed" not in st.session_state:
     st.session_state.indexed = False
 
+if "indexed_files" not in st.session_state:
+    st.session_state.indexed_files = []
+
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
 engine = st.session_state.finance_rag
 
-
-# Sidebar settings.
+# --------------------------------------------------
+# Sidebar
+# --------------------------------------------------
 with st.sidebar:
     st.header("Document settings")
 
@@ -39,113 +48,138 @@ with st.sidebar:
         help="PDF and TXT files are supported.",
     )
 
+    # Keep disabled on low-memory hosting.
     use_reranker = st.checkbox(
         "Use cross-encoder reranking",
-        value=engine.use_reranker,
+        value=False,
         help=(
-            "May improve relevance, but loads an additional model "
-            "and uses more memory."
+            "Uses additional memory. Keep disabled on Render's "
+            "512 MB instance."
         ),
     )
 
     top_k = st.slider(
         "Passages to retrieve",
         min_value=1,
-        max_value=10,
-        value=4,
+        max_value=5,
+        value=3,
     )
 
     answer_mode = st.radio(
         "Answer mode",
-        options=[
-            "Groq LLM",
-            "Extractive (no API)",
-        ],
+        options=["Groq LLM", "Extractive (no API)"],
         index=0,
         help=(
-            "Groq LLM generates a response from retrieved passages. "
-            "Extractive mode displays the passages directly and makes "
-            "no LLM API request."
+            "Groq generates an answer from retrieved passages. "
+            "Extractive mode returns retrieved text without an LLM API call."
         ),
     )
 
-    if st.button("Index documents", type="primary", use_container_width=True):
+    st.caption("Tip: Start with one small PDF while testing deployment.")
+
+    if st.button(
+        "Index documents",
+        type="primary",
+        use_container_width=True,
+    ):
         if not uploaded_files:
             st.warning("Upload at least one PDF or TXT file first.")
+
         else:
-            try:
-                # Apply the current reranker setting.
-                engine.use_reranker = use_reranker
+            # Basic upload-size safeguard: 10 MB per file.
+            max_file_size = 10 * 1024 * 1024
+            oversized = [
+                file.name
+                for file in uploaded_files
+                if file.size > max_file_size
+            ]
 
-                with st.spinner("Reading, chunking, and indexing documents..."):
-                    passage_count = engine.ingest(uploaded_files)
-
-                st.session_state.indexed = True
-                st.session_state.indexed_files = [
-                    file.name for file in uploaded_files
-                ]
-                st.session_state.messages = []
-
-                st.success(
-                    f"Indexed {len(uploaded_files)} file(s) "
-                    f"into {passage_count} passages."
-                )
-
-            except Exception as exc:
+            if oversized:
                 st.error(
-                    f"Indexing failed: {type(exc).__name__}: {exc}"
+                    "These files exceed the 10 MB limit: "
+                    + ", ".join(oversized)
                 )
+            else:
+                try:
+                    engine.use_reranker = False
+
+                    with st.spinner(
+                        "Reading and indexing documents..."
+                    ):
+                        passage_count = engine.ingest(uploaded_files)
+
+                    # Only update the UI state after successful indexing.
+                    st.session_state.indexed = True
+                    st.session_state.indexed_files = [
+                        file.name for file in uploaded_files
+                    ]
+                    st.session_state.messages = []
+
+                    st.success(
+                        f"Indexed {len(uploaded_files)} file(s) "
+                        f"into {passage_count} passages."
+                    )
+
+                except Exception as exc:
+                    st.error(
+                        f"Indexing failed: {type(exc).__name__}: {exc}"
+                    )
 
     if st.session_state.indexed:
         st.success("Documents are indexed.")
 
         with st.expander("Indexed files"):
-            for filename in st.session_state.get("indexed_files", []):
+            for filename in st.session_state.indexed_files:
                 st.write(f"📄 {filename}")
 
     if st.button("Clear chat", use_container_width=True):
         st.session_state.messages = []
         st.rerun()
 
+    st.divider()
+    st.caption(
+        "Privacy: Uploaded documents are processed by this app. "
+        "With Groq selected, retrieved excerpts are sent to the Groq API."
+    )
 
-# Display previous conversation.
+# --------------------------------------------------
+# Previous messages
+# --------------------------------------------------
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-        if message["role"] == "assistant" and message.get("sources"):
+        sources = message.get("sources", [])
+
+        if message["role"] == "assistant" and sources:
             with st.expander("Sources and retrieved passages"):
-                for i, source in enumerate(message["sources"], start=1):
+                for i, source in enumerate(sources, start=1):
                     page = source.get("page")
-                    page_text = f", page {page}" if page is not None else ""
+                    page_text = (
+                        f", page {page}" if page is not None else ""
+                    )
 
                     st.markdown(
                         f"**{i}. {source.get('source', 'Unknown')}"
                         f"{page_text}**"
                     )
 
-                    st.caption(
-                        "Hybrid score: "
-                        f"{source.get('score', 0.0):.3f} · "
-                        "Semantic score: "
-                        f"{source.get('semantic_score', 0.0):.3f} · "
-                        "BM25 score: "
-                        f"{source.get('keyword_score', 0.0):.3f}"
-                    )
-
                     st.write(source.get("text", ""))
-                    if i < len(message["sources"]):
+
+                    if i < len(sources):
                         st.divider()
 
-
-# Chat input.
+# --------------------------------------------------
+# Chat
+# --------------------------------------------------
 question = st.chat_input(
     "Ask about revenue, expenses, profit, ratios, or financial risks..."
 )
 
 if question:
     if not st.session_state.indexed or not engine.chunks:
-        st.warning("Upload and index your documents before asking a question.")
+        st.warning("Upload and index documents before asking a question.")
+
     else:
         st.session_state.messages.append(
             {
@@ -159,9 +193,14 @@ if question:
 
         with st.chat_message("assistant"):
             try:
-                with st.spinner("Searching your financial documents..."):
-                    engine.use_reranker = use_reranker
-                    contexts = engine.retrieve(question, top_k=top_k)
+                # Do not load the cross-encoder on low-memory hosting.
+                engine.use_reranker = False
+
+                with st.spinner("Searching financial documents..."):
+                    contexts = engine.retrieve(
+                        question,
+                        top_k=top_k,
+                    )
 
                 with st.spinner("Preparing your answer..."):
                     use_llm = answer_mode == "Groq LLM"
@@ -175,10 +214,8 @@ if question:
 
                 st.markdown(answer)
 
-                with st.expander("Sources and retrieved passages"):
-                    if not contexts:
-                        st.write("No passages were retrieved.")
-                    else:
+                if contexts:
+                    with st.expander("Sources and retrieved passages"):
                         for i, source in enumerate(contexts, start=1):
                             page = source.get("page")
                             page_text = (
@@ -188,21 +225,17 @@ if question:
                             )
 
                             st.markdown(
-                                f"**{i}. {source.get('source', 'Unknown')}"
+                                f"**{i}. "
+                                f"{source.get('source', 'Unknown')}"
                                 f"{page_text}**"
                             )
 
-                            st.caption(
-                                f"Hybrid: {source.get('score', 0.0):.3f} · "
-                                f"Semantic: "
-                                f"{source.get('semantic_score', 0.0):.3f} · "
-                                f"BM25: "
-                                f"{source.get('keyword_score', 0.0):.3f}"
-                            )
-
                             st.write(source.get("text", ""))
+
                             if i < len(contexts):
                                 st.divider()
+                else:
+                    st.info("No relevant passages were retrieved.")
 
                 st.session_state.messages.append(
                     {
@@ -216,7 +249,6 @@ if question:
                 error_message = (
                     f"Something went wrong: {type(exc).__name__}: {exc}"
                 )
-
                 st.error(error_message)
 
                 st.session_state.messages.append(
