@@ -1,8 +1,5 @@
-<<<<<<< HEAD
-Finance RAG Assistant — Groq + LlamaIndex
-=======
+
 Finance RAG Assistant
->>>>>>> 43278181b7b698ef1de1f17b31c7ce65d0b317c5
 Features
 - Streamlit chat interface
 - PDF and TXT ingestion with page/source metadata
@@ -37,8 +34,5 @@ Limitations
 - Scanned/image-only PDFs need OCR, which is not included.
 - The in-memory index is not persistent; documents may need re-indexing after restarts.
 - Reranker and embedding model downloads can exceed free-host memory or startup limits.
-<<<<<<< HEAD
-- Use this as a document research assistant, not as personalized investment advice.
-=======
-- Use this as a document research assistant, not as personalized investment advice.
->>>>>>> 43278181b7b698ef1de1f17b31c7ce65d0b317c5
+
+
