@@ -1,4 +1,4 @@
-Finance RAG Assistant — Groq + LlamaIndex
+Finance RAG Assistant
 Features
 - Streamlit chat interface
 - PDF and TXT ingestion with page/source metadata
