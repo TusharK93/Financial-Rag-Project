@@ -24,50 +24,39 @@ st.set_page_config(
 # 2. Initialize NLTK before importing rag.py
 # ---------------------------------------------------------
 
-# Prefer a corpus bundled with the project.
-PROJECT_NLTK_DIR = (
-    Path(__file__).parent / "resources" / "nltk_data"
+
+# ---------------------------------------------------------
+# 2. Initialize NLTK before importing rag.py
+# ---------------------------------------------------------
+
+import os
+from pathlib import Path
+import nltk
+
+# Path to the corpus committed to your GitHub repository.
+NLTK_DATA_DIR = (
+    Path(__file__).resolve().parent
+    / "resources"
+    / "nltk_data"
 )
 
-# Fallback to a writable temporary directory on Streamlit Cloud.
-TEMP_NLTK_DIR = Path("/tmp/nltk_data")
+# Configure NLTK before importing LlamaIndex or rag.py.
+os.environ["NLTK_DATA"] = str(NLTK_DATA_DIR)
 
-if PROJECT_NLTK_DIR.exists():
-    NLTK_DATA_DIR = str(PROJECT_NLTK_DIR)
-else:
-    NLTK_DATA_DIR = str(TEMP_NLTK_DIR)
-    TEMP_NLTK_DIR.mkdir(parents=True, exist_ok=True)
+if str(NLTK_DATA_DIR) not in nltk.data.path:
+    nltk.data.path.insert(0, str(NLTK_DATA_DIR))
 
-os.environ["NLTK_DATA"] = NLTK_DATA_DIR
-
-if NLTK_DATA_DIR not in nltk.data.path:
-    nltk.data.path.insert(0, NLTK_DATA_DIR)
-
+# Verify the corpus exists; do not download it at runtime.
 try:
     nltk.data.find("corpora/stopwords")
 
-except LookupError:
-    try:
-        downloaded = nltk.download(
-            "stopwords",
-            download_dir=NLTK_DATA_DIR,
-            quiet=False,
-            raise_on_error=True,
-        )
-
-        if not downloaded:
-            raise RuntimeError(
-                "NLTK stopwords download failed."
-            )
-
-        nltk.data.find("corpora/stopwords")
-
-    except Exception as exc:
-        raise RuntimeError(
-            "NLTK stopwords are unavailable. "
-            "If Streamlit Cloud cannot download them, "
-            "bundle the corpus in resources/nltk_data/corpora/stopwords."
-        ) from exc
+except LookupError as exc:
+    raise RuntimeError(
+        "NLTK stopwords corpus was not found. "
+        "Ensure resources/nltk_data/corpora/stopwords.zip "
+        "or resources/nltk_data/corpora/stopwords/ "
+        "is committed to your GitHub repository."
+    ) from exc
 
 
 # ---------------------------------------------------------
