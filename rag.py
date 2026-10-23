@@ -16,7 +16,7 @@ from dotenv import load_dotenv
 
 from langsmith import Client, traceable
 from logger import logger
-from rag import FinanceRAG, answer_with_llm
+
 import numpy as np
 import pymupdf
 from dotenv import load_dotenv
