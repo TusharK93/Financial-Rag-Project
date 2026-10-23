@@ -1,13 +1,12 @@
-import os
-from pathlib import Path
 
-import nltk
+import os
+
 import streamlit as st
 from dotenv import load_dotenv
 
-# ---------------------------------------------------------
-# 1. Page configuration
-# ---------------------------------------------------------
+# =========================================================
+# 1. PAGE CONFIGURATION
+# =========================================================
 
 st.set_page_config(
     page_title="Finance RAG Assistant",
@@ -15,63 +14,14 @@ st.set_page_config(
     layout="wide",
 )
 
-# ---------------------------------------------------------
-# 2. Initialize NLTK before importing rag.py
-# ---------------------------------------------------------
-
-
-# ---------------------------------------------------------
-# 2. Initialize NLTK before importing rag.py
-# ---------------------------------------------------------
-
-
-# ---------------------------------------------------------
-# 2. Initialize NLTK before importing rag.py
-# ---------------------------------------------------------
-
-import os
-from pathlib import Path
-import nltk
-
-# Path to the corpus committed to your GitHub repository.
-NLTK_DATA_DIR = (
-    Path(__file__).resolve().parent
-    / "resources"
-    / "nltk_data"
-)
-
-# Configure NLTK before importing LlamaIndex or rag.py.
-os.environ["NLTK_DATA"] = str(NLTK_DATA_DIR)
-
-if str(NLTK_DATA_DIR) not in nltk.data.path:
-    nltk.data.path.insert(0, str(NLTK_DATA_DIR))
-
-# Verify the corpus exists; do not download it at runtime.
-try:
-    nltk.data.find("corpora/stopwords")
-
-except LookupError as exc:
-    raise RuntimeError(
-        "NLTK stopwords corpus was not found. "
-        "Ensure resources/nltk_data/corpora/stopwords.zip "
-        "or resources/nltk_data/corpora/stopwords/ "
-        "is committed to your GitHub repository."
-    ) from exc
-
-
-# ---------------------------------------------------------
-# 3. Load environment variables and Streamlit secrets
-# ---------------------------------------------------------
+# =========================================================
+# 2. ENVIRONMENT VARIABLES AND STREAMLIT SECRETS
+# =========================================================
 
 load_dotenv(override=False)
 
-LANGSMITH_DEFAULTS = {
-    "LANGSMITH_TRACING": "true",
-    "LANGSMITH_ENDPOINT": "https://api.smith.langchain.com",
-    "LANGSMITH_PROJECT": "finance-rag-assistant",
-}
-
-# Read configured Streamlit secrets without printing their values.
+# Load LangSmith configuration from Streamlit Secrets.
+# Never print or display API keys.
 for key in (
     "LANGSMITH_TRACING",
     "LANGSMITH_ENDPOINT",
@@ -85,33 +35,53 @@ for key in (
             os.environ[key] = str(value).strip()
 
     except Exception:
-        # Secrets may not be configured during local development.
+        # Streamlit Secrets may not be configured locally.
         pass
 
-for key, value in LANGSMITH_DEFAULTS.items():
-    os.environ.setdefault(key, value)
+os.environ.setdefault("LANGSMITH_TRACING", "true")
+os.environ.setdefault(
+    "LANGSMITH_ENDPOINT",
+    "https://api.smith.langchain.com",
+)
+os.environ.setdefault(
+    "LANGSMITH_PROJECT",
+    "finance-rag-assistant",
+)
 
-# Import tracing only after environment configuration.
-from langsmith import Client, traceable
-from logger import logger
-from rag import FinanceRAG, answer_with_llm
+# =========================================================
+# 3. IMPORT APPLICATION MODULES
+# No NLTK corpus setup is required in this file.
+# =========================================================
 
-# ---------------------------------------------------------
-# 4. LangSmith diagnostics
-# ---------------------------------------------------------
+try:
+    from langsmith import Client, traceable
+    from logger import logger
+    from rag import FinanceRAG, answer_with_llm
+
+except Exception as exc:
+    st.error(
+        "Application imports failed. Check requirements.txt "
+        "and the deployment logs."
+    )
+    st.exception(exc)
+    st.stop()
+
+# =========================================================
+# 4. LANGSMITH DIAGNOSTICS
+# =========================================================
 
 def langsmith_config_status():
     """Return configuration status without exposing credentials."""
 
+    tracing_value = os.getenv("LANGSMITH_TRACING", "").strip().lower()
+
     return {
-        "tracing_enabled": os.getenv(
-            "LANGSMITH_TRACING", ""
-        ).lower() in {"true", "1", "yes"},
+        "tracing_enabled": tracing_value in {"true", "1", "yes"},
         "endpoint_configured": bool(
-            os.getenv("LANGSMITH_ENDPOINT")
+            os.getenv("LANGSMITH_ENDPOINT", "").strip()
         ),
         "api_key_configured": bool(
-            os.getenv("LANGSMITH_API_KEY")
+            os.getenv("LANGSMITH_API_KEY", "").strip()
         ),
         "project": os.getenv(
             "LANGSMITH_PROJECT",
@@ -122,17 +92,13 @@ def langsmith_config_status():
 
 @traceable(name="streamlit_langsmith_test")
 def langsmith_test_run():
-    """Create a small test trace in LangSmith."""
-
+    """Generate a small LangSmith trace."""
     return {"status": "success"}
 
 
-# ---------------------------------------------------------
-# 5. Traced RAG wrappers
-# Define these BEFORE any chat code calls them.
-# Hide inputs and outputs to avoid sending document passages
-# or financial answers as trace payloads by default.
-# ---------------------------------------------------------
+# =========================================================
+# 5. TRACED RAG FUNCTIONS
+# =========================================================
 
 @traceable(
     name="finance_rag_retrieval",
@@ -140,8 +106,7 @@ def langsmith_test_run():
     hide_outputs=True,
 )
 def traced_retrieve(engine, question, top_k):
-    """Retrieve relevant passages from the indexed documents."""
-
+    """Retrieve relevant passages from indexed documents."""
     return engine.retrieve(question, top_k=top_k)
 
 
@@ -151,8 +116,7 @@ def traced_retrieve(engine, question, top_k):
     hide_outputs=True,
 )
 def traced_answer(question, contexts, use_llm):
-    """Generate an answer from the retrieved passages."""
-
+    """Generate an answer from retrieved passages."""
     return answer_with_llm(
         question,
         contexts,
@@ -161,9 +125,9 @@ def traced_answer(question, contexts, use_llm):
     )
 
 
-# ---------------------------------------------------------
-# 6. Streamlit page
-# ---------------------------------------------------------
+# =========================================================
+# 6. MAIN PAGE
+# =========================================================
 
 st.title("📊 Finance RAG Assistant")
 
@@ -172,9 +136,9 @@ st.caption(
     "document-grounded answers."
 )
 
-# ---------------------------------------------------------
-# 7. Session state
-# ---------------------------------------------------------
+# =========================================================
+# 7. SESSION STATE
+# =========================================================
 
 if "finance_rag" not in st.session_state:
     st.session_state.finance_rag = FinanceRAG(
@@ -192,9 +156,9 @@ if "messages" not in st.session_state:
 
 engine = st.session_state.finance_rag
 
-# ---------------------------------------------------------
-# 8. Sidebar
-# ---------------------------------------------------------
+# =========================================================
+# 8. SIDEBAR
+# =========================================================
 
 with st.sidebar:
     st.header("Document settings")
@@ -227,9 +191,8 @@ with st.sidebar:
         options=["Groq LLM", "Extractive (no API)"],
         index=0,
         help=(
-            "Groq generates an answer from retrieved passages. "
-            "Extractive mode returns retrieved text without "
-            "an LLM API call."
+            "Groq generates answers from retrieved passages. "
+            "Extractive mode returns retrieved text without an LLM API call."
         ),
     )
 
@@ -256,7 +219,10 @@ with st.sidebar:
             "API key configured:",
             status["api_key_configured"],
         )
-        st.write("Project:", status["project"])
+        st.write(
+            "Project:",
+            status["project"],
+        )
 
         if st.button(
             "Test LangSmith tracing",
@@ -264,8 +230,8 @@ with st.sidebar:
         ):
             if not status["tracing_enabled"]:
                 st.error(
-                    "Tracing is disabled. Set "
-                    "LANGSMITH_TRACING to true."
+                    "Tracing is disabled. "
+                    "Set LANGSMITH_TRACING to true."
                 )
 
             elif not status["api_key_configured"]:
@@ -281,37 +247,32 @@ with st.sidebar:
 
             else:
                 try:
-                    # Execute a function decorated with @traceable.
+                    # Generate a trace through the decorated function.
                     result = langsmith_test_run()
 
-                    # Check that the LangSmith API is reachable
-                    # and accepts the configured credentials.
+                    # Verify LangSmith API connectivity.
                     client = Client()
-                    next(
-                        iter(client.list_projects(limit=1)),
-                        None,
-                    )
+                    next(iter(client.list_projects(limit=1)), None)
 
                     st.success(
-                        "LangSmith API request succeeded and "
-                        "the test function executed. Check the "
-                        "selected project for its trace."
+                        f"Diagnostic function returned {result}. "
+                        "The LangSmith API request succeeded. "
+                        "Check your LangSmith project for the trace."
                     )
 
                 except Exception as exc:
                     logger.exception(
                         "LangSmith diagnostic failed"
                     )
-
                     st.error(
-                        "LangSmith test failed "
+                        f"LangSmith test failed "
                         f"({type(exc).__name__}). "
-                        "Check the app logs for details."
+                        "Check application logs for details."
                     )
 
         st.caption(
-            "API authentication and trace upload are different "
-            "checks. Confirm that the test run appears in LangSmith."
+            "An API request succeeding does not guarantee that "
+            "the trace has already appeared in the project."
         )
 
     # -----------------------------------------------------
@@ -374,7 +335,6 @@ with st.sidebar:
                     logger.exception(
                         "Document indexing failed in Streamlit UI"
                     )
-
                     st.error(
                         f"Indexing failed ({type(exc).__name__}). "
                         "Check application logs for details."
@@ -397,14 +357,14 @@ with st.sidebar:
     st.divider()
 
     st.caption(
-        "Privacy: With Groq selected, retrieved excerpts are sent "
-        "to Groq. The traced RAG wrappers hide their inputs and "
-        "outputs by default."
+        "Privacy: With Groq selected, retrieved excerpts may be sent "
+        "to Groq. The traced RAG wrappers hide their inputs and outputs "
+        "by default; other tracing inside rag.py may behave differently."
     )
 
-# ---------------------------------------------------------
-# 9. Display previous chat messages
-# ---------------------------------------------------------
+# =========================================================
+# 9. DISPLAY CHAT HISTORY
+# =========================================================
 
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
@@ -427,14 +387,15 @@ for message in st.session_state.messages:
                         f"{source.get('source', 'Unknown')}"
                         f"{page_text}**"
                     )
+
                     st.write(source.get("text", ""))
 
                     if i < len(sources):
                         st.divider()
 
-# ---------------------------------------------------------
-# 10. Chat and RAG execution
-# ---------------------------------------------------------
+# =========================================================
+# 10. CHAT AND RAG EXECUTION
+# =========================================================
 
 question = st.chat_input(
     "Ask about revenue, expenses, profit, ratios, or financial risks..."
@@ -448,7 +409,10 @@ if question:
 
     else:
         st.session_state.messages.append(
-            {"role": "user", "content": question}
+            {
+                "role": "user",
+                "content": question,
+            }
         )
 
         with st.chat_message("user"):
@@ -498,6 +462,7 @@ if question:
                                 f"{source.get('source', 'Unknown')}"
                                 f"{page_text}**"
                             )
+
                             st.write(source.get("text", ""))
 
                             if i < len(contexts):
