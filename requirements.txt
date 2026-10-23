@@ -22,3 +22,5 @@ numpy
 sentence-transformers
 groq
 llama-index-core
+
+langsmith
