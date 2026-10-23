@@ -1,13 +1,51 @@
+
 """Streamlit UI for the Finance RAG Assistant with LangSmith tracing."""
 
 import os
 
+import nltk
 import streamlit as st
 from dotenv import load_dotenv
 from langsmith import Client, traceable
 
+
 # ---------------------------------------------------------
-# 1. Load configuration BEFORE importing the RAG module.
+# 1. Initialize NLTK BEFORE importing rag.py
+# ---------------------------------------------------------
+
+NLTK_DATA_DIR = "/tmp/nltk_data"
+
+os.makedirs(NLTK_DATA_DIR, exist_ok=True)
+
+if NLTK_DATA_DIR not in nltk.data.path:
+    nltk.data.path.insert(0, NLTK_DATA_DIR)
+
+try:
+    nltk.data.find("corpora/stopwords")
+except LookupError:
+    try:
+        downloaded = nltk.download(
+            "stopwords",
+            download_dir=NLTK_DATA_DIR,
+            quiet=True,
+            raise_on_error=True,
+        )
+
+        if not downloaded:
+            raise RuntimeError("NLTK stopwords download returned False.")
+
+        # Verify that NLTK can now access the corpus.
+        nltk.data.find("corpora/stopwords")
+
+    except Exception as exc:
+        raise RuntimeError(
+            "Could not install or access NLTK stopwords. "
+            "Check whether Streamlit Cloud can download NLTK data."
+        ) from exc
+
+
+# ---------------------------------------------------------
+# 2. Load environment configuration
 # ---------------------------------------------------------
 
 load_dotenv(override=False)
@@ -22,29 +60,35 @@ LANGSMITH_KEYS = (
 for key in LANGSMITH_KEYS:
     try:
         value = st.secrets.get(key)
+
         if value is not None:
             os.environ[key] = str(value)
+
     except Exception:
         # Streamlit secrets may not be configured locally.
         pass
 
-# Set defaults only; never replace an existing API key.
+# Set defaults without overwriting existing values.
 os.environ.setdefault("LANGSMITH_TRACING", "true")
+
 os.environ.setdefault(
     "LANGSMITH_ENDPOINT",
     "https://api.smith.langchain.com",
 )
+
 os.environ.setdefault(
     "LANGSMITH_PROJECT",
     "finance-rag-assistant",
 )
 
+
+# Import the RAG module only after NLTK initialization.
 from logger import logger
 from rag import FinanceRAG, answer_with_llm
 
 
 # ---------------------------------------------------------
-# 2. Page configuration
+# 3. Page configuration
 # ---------------------------------------------------------
 
 st.set_page_config(
@@ -54,6 +98,7 @@ st.set_page_config(
 )
 
 st.title("📊 Finance RAG Assistant")
+
 st.caption(
     "Ask questions about your financial reports using "
     "document-grounded answers."
@@ -61,11 +106,12 @@ st.caption(
 
 
 # ---------------------------------------------------------
-# 3. LangSmith diagnostics
+# 4. LangSmith diagnostics
 # ---------------------------------------------------------
 
 def langsmith_config_status():
-    """Return configuration status without revealing secrets."""
+    """Return LangSmith configuration status without secrets."""
+
     return {
         "tracing_enabled": (
             os.getenv("LANGSMITH_TRACING", "").lower()
@@ -86,7 +132,8 @@ def langsmith_config_status():
 
 @traceable(name="streamlit_langsmith_test")
 def langsmith_test_run():
-    """A minimal trace independent of the RAG workflow."""
+    """Create a minimal LangSmith test trace."""
+
     return {
         "status": "success",
         "message": "LangSmith test function executed.",
@@ -94,7 +141,30 @@ def langsmith_test_run():
 
 
 # ---------------------------------------------------------
-# 4. Session state
+# 5. Trace wrappers for custom RAG methods
+# ---------------------------------------------------------
+
+@traceable(name="finance_rag_retrieval")
+def traced_retrieve(engine, question, top_k):
+    """Trace document retrieval."""
+
+    return engine.retrieve(question, top_k=top_k)
+
+
+@traceable(name="finance_rag_answer")
+def traced_answer(question, contexts, use_llm):
+    """Trace answer generation."""
+
+    return answer_with_llm(
+        question,
+        contexts,
+        use_llm=use_llm,
+        fallback_on_error=True,
+    )
+
+
+# ---------------------------------------------------------
+# 6. Session state
 # ---------------------------------------------------------
 
 if "finance_rag" not in st.session_state:
@@ -115,7 +185,7 @@ engine = st.session_state.finance_rag
 
 
 # ---------------------------------------------------------
-# 5. Sidebar
+# 7. Sidebar and document settings
 # ---------------------------------------------------------
 
 with st.sidebar:
@@ -150,8 +220,8 @@ with st.sidebar:
         index=0,
         help=(
             "Groq generates an answer from retrieved passages. "
-            "Extractive mode returns retrieved text without an "
-            "LLM API call."
+            "Extractive mode returns retrieved text without "
+            "an LLM API call."
         ),
     )
 
@@ -170,14 +240,17 @@ with st.sidebar:
             "Tracing enabled:",
             status["tracing_enabled"],
         )
+
         st.write(
             "Endpoint configured:",
             status["endpoint_configured"],
         )
+
         st.write(
             "API key configured:",
             status["api_key_configured"],
         )
+
         st.write("Project:", status["project"])
 
         if st.button(
@@ -186,31 +259,36 @@ with st.sidebar:
         ):
             if not status["tracing_enabled"]:
                 st.error("LangSmith tracing is not enabled.")
+
             elif not status["api_key_configured"]:
                 st.error(
                     "LangSmith API key is missing. "
                     "Check Streamlit Cloud Secrets."
                 )
+
             else:
                 try:
                     result = langsmith_test_run()
+
                     st.success(
                         f"Test function executed: "
                         f"{result['status']}"
                     )
 
-                    # This performs an API operation, unlike merely
-                    # constructing Client().
+                    # Perform an API request to verify connectivity.
                     client = Client()
+
                     if client.info is not None:
                         st.success(
                             "LangSmith API authentication succeeded. "
-                            "Now check the project for the test trace."
+                            "Check the project for the test trace."
                         )
+
                 except Exception as exc:
                     logger.exception(
                         "LangSmith diagnostic failed"
                     )
+
                     st.error(
                         "LangSmith diagnostic failed: "
                         f"{type(exc).__name__}. "
@@ -235,6 +313,7 @@ with st.sidebar:
             st.warning(
                 "Upload at least one PDF or TXT file first."
             )
+
         else:
             max_file_size = 10 * 1024 * 1024
 
@@ -249,10 +328,12 @@ with st.sidebar:
                     "These files exceed the 10 MB limit: "
                     + ", ".join(oversized)
                 )
+
                 logger.warning(
                     "Upload rejected due to size limit: %s",
                     oversized,
                 )
+
             else:
                 try:
                     engine.use_reranker = bool(use_reranker)
@@ -260,23 +341,28 @@ with st.sidebar:
                     with st.spinner(
                         "Reading and indexing documents..."
                     ):
-                        # Explicit trace for custom Python code.
-                        passage_count = engine.ingest(uploaded_files)
+                        passage_count = engine.ingest(
+                            uploaded_files
+                        )
 
                     st.session_state.indexed = True
+
                     st.session_state.indexed_files = [
                         file.name for file in uploaded_files
                     ]
+
                     st.session_state.messages = []
 
                     st.success(
                         f"Indexed {len(uploaded_files)} file(s) "
                         f"into {passage_count} passages."
                     )
+
                 except Exception as exc:
                     logger.exception(
                         "Document indexing failed in Streamlit UI"
                     )
+
                     st.error(
                         f"Indexing failed ({type(exc).__name__}). "
                         "Check application logs for details."
@@ -297,6 +383,7 @@ with st.sidebar:
         st.rerun()
 
     st.divider()
+
     st.caption(
         "Privacy: Uploaded documents are processed by this app. "
         "With Groq selected, retrieved excerpts are sent to Groq."
@@ -304,7 +391,7 @@ with st.sidebar:
 
 
 # ---------------------------------------------------------
-# 6. Display previous messages
+# 8. Display previous messages
 # ---------------------------------------------------------
 
 for message in st.session_state.messages:
@@ -317,6 +404,7 @@ for message in st.session_state.messages:
             with st.expander("Sources and retrieved passages"):
                 for i, source in enumerate(sources, start=1):
                     page = source.get("page")
+
                     page_text = (
                         f", page {page}"
                         if page is not None
@@ -328,6 +416,7 @@ for message in st.session_state.messages:
                         f"{source.get('source', 'Unknown')}"
                         f"{page_text}**"
                     )
+
                     st.write(source.get("text", ""))
 
                     if i < len(sources):
@@ -335,7 +424,7 @@ for message in st.session_state.messages:
 
 
 # ---------------------------------------------------------
-# 7. Chat and RAG execution
+# 9. Chat and RAG execution
 # ---------------------------------------------------------
 
 question = st.chat_input(
@@ -347,6 +436,7 @@ if question:
         st.warning(
             "Upload and index documents before asking a question."
         )
+
     else:
         st.session_state.messages.append(
             {"role": "user", "content": question}
@@ -359,9 +449,6 @@ if question:
             try:
                 engine.use_reranker = bool(use_reranker)
 
-                # Trace retrieval, including the query and retrieved
-                # passages. Avoid tracing sensitive financial content
-                # unless you are authorized to send it to LangSmith.
                 with st.spinner("Searching financial documents..."):
                     contexts = traced_retrieve(
                         engine,
@@ -385,9 +472,11 @@ if question:
                         "Sources and retrieved passages"
                     ):
                         for i, source in enumerate(
-                            contexts, start=1
+                            contexts,
+                            start=1,
                         ):
                             page = source.get("page")
+
                             page_text = (
                                 f", page {page}"
                                 if page is not None
@@ -399,10 +488,12 @@ if question:
                                 f"{source.get('source', 'Unknown')}"
                                 f"{page_text}**"
                             )
+
                             st.write(source.get("text", ""))
 
                             if i < len(contexts):
                                 st.divider()
+
                 else:
                     st.info("No relevant passages were retrieved.")
 
@@ -422,6 +513,7 @@ if question:
                     "Please try again. Check application logs "
                     "if the issue persists."
                 )
+
                 st.error(error_message)
 
                 st.session_state.messages.append(
@@ -431,22 +523,3 @@ if question:
                         "sources": [],
                     }
                 )
-
-
-# ---------------------------------------------------------
-# 8. Trace wrappers for custom RAG methods
-# ---------------------------------------------------------
-
-@traceable(name="finance_rag_retrieval")
-def traced_retrieve(engine, question, top_k):
-    return engine.retrieve(question, top_k=top_k)
-
-
-@traceable(name="finance_rag_answer")
-def traced_answer(question, contexts, use_llm):
-    return answer_with_llm(
-        question,
-        contexts,
-        use_llm=use_llm,
-        fallback_on_error=True,
-    )
