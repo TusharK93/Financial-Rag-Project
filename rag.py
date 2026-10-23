@@ -28,12 +28,12 @@ load_dotenv(override=False)
 
 try:
     from llama_index.core import Document
-    from llama_index.core.node_parser import SentenceSplitter
+    from llama_index.core.node_parser import TokenTextSplitter
 
     LLAMAINDEX_AVAILABLE = True
 except ImportError:
     Document = None
-    SentenceSplitter = None
+    TokenTextSplitter = None
     LLAMAINDEX_AVAILABLE = False
 
 try:
@@ -177,10 +177,10 @@ class FinanceRAG:
         self._splitter = None
 
         if LLAMAINDEX_AVAILABLE:
-            self._splitter = SentenceSplitter(
-                chunk_size=chunk_size,
-                chunk_overlap=chunk_overlap,
-            )
+           self._splitter = TokenTextSplitter(
+               chunk_size=512,
+               chunk_overlap=50,
+               )
 
     def _get_embedder(self):
         """Load the embedding model only when needed."""
