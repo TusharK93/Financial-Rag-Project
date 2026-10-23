@@ -6,7 +6,17 @@ import re
 import time
 from collections import Counter
 from math import log
+from dotenv import load_dotenv
 
+# Section 2: NLTK initialization goes here
+
+
+
+# Configure LangSmith environment variables here
+
+from langsmith import Client, traceable
+from logger import logger
+from rag import FinanceRAG, answer_with_llm
 import numpy as np
 import pymupdf
 from dotenv import load_dotenv

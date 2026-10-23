@@ -19,35 +19,56 @@ st.set_page_config(
 # 2. Initialize NLTK before importing rag.py
 # ---------------------------------------------------------
 
-NLTK_DATA_DIR = "/tmp/nltk_data"
-Path(NLTK_DATA_DIR).mkdir(parents=True, exist_ok=True)
+
+# ---------------------------------------------------------
+# 2. Initialize NLTK before importing rag.py
+# ---------------------------------------------------------
+
+# Prefer a corpus bundled with the project.
+PROJECT_NLTK_DIR = (
+    Path(__file__).parent / "resources" / "nltk_data"
+)
+
+# Fallback to a writable temporary directory on Streamlit Cloud.
+TEMP_NLTK_DIR = Path("/tmp/nltk_data")
+
+if PROJECT_NLTK_DIR.exists():
+    NLTK_DATA_DIR = str(PROJECT_NLTK_DIR)
+else:
+    NLTK_DATA_DIR = str(TEMP_NLTK_DIR)
+    TEMP_NLTK_DIR.mkdir(parents=True, exist_ok=True)
+
+os.environ["NLTK_DATA"] = NLTK_DATA_DIR
 
 if NLTK_DATA_DIR not in nltk.data.path:
     nltk.data.path.insert(0, NLTK_DATA_DIR)
 
 try:
     nltk.data.find("corpora/stopwords")
+
 except LookupError:
     try:
         downloaded = nltk.download(
             "stopwords",
             download_dir=NLTK_DATA_DIR,
-            quiet=True,
+            quiet=False,
             raise_on_error=True,
         )
 
         if not downloaded:
             raise RuntimeError(
-                "NLTK stopwords download returned False."
+                "NLTK stopwords download failed."
             )
 
         nltk.data.find("corpora/stopwords")
 
     except Exception as exc:
         raise RuntimeError(
-            "Could not install or access NLTK stopwords. "
-            "Check whether the deployment can download NLTK data."
+            "NLTK stopwords are unavailable. "
+            "If Streamlit Cloud cannot download them, "
+            "bundle the corpus in resources/nltk_data/corpora/stopwords."
         ) from exc
+
 
 # ---------------------------------------------------------
 # 3. Load environment variables and Streamlit secrets
