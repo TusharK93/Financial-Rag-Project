@@ -20,7 +20,7 @@ st.set_page_config(
 
 load_dotenv(override=False)
 
-# Load configuration from Streamlit Secrets (LLM keys + LangSmith).
+# Load configuration from Streamlit Secrets.
 # Never print or display API keys.
 for key in (
     "GROQ_API_KEY",
@@ -45,15 +45,18 @@ for key in (
         # Streamlit Secrets may not be configured locally.
         pass
 
-# Only trace by default when a LangSmith key exists (avoids noisy errors otherwise).
+# Enable tracing only when a LangSmith API key exists,
+# unless LANGSMITH_TRACING has already been configured.
 os.environ.setdefault(
     "LANGSMITH_TRACING",
     "true" if os.getenv("LANGSMITH_API_KEY", "").strip() else "false",
 )
+
 os.environ.setdefault(
     "LANGSMITH_ENDPOINT",
     "https://api.smith.langchain.com",
 )
+
 os.environ.setdefault(
     "LANGSMITH_PROJECT",
     "finance-rag-assistant",
@@ -61,7 +64,6 @@ os.environ.setdefault(
 
 # =========================================================
 # 3. IMPORT APPLICATION MODULES
-# No NLTK corpus setup is required in this file.
 # =========================================================
 
 try:
@@ -207,6 +209,7 @@ with st.sidebar:
         "Gemini (Flash, free)": "gemini",
         "Extractive (no API)": "extractive",
     }
+
     answer_mode = st.radio(
         "Answer mode",
         options=list(provider_options),
@@ -217,13 +220,16 @@ with st.sidebar:
             "Extractive mode returns retrieved text without an LLM API call."
         ),
     )
+
     provider = provider_options[answer_mode]
 
     keys = llm.available_providers()
+
     st.caption(
         f"Groq key: {'✅' if keys['groq'] else '❌'} · "
         f"Gemini key: {'✅' if keys['gemini'] else '❌'}"
     )
+
     if provider != "extractive" and not any(keys.values()):
         st.warning(
             "No LLM key found. Set GROQ_API_KEY and/or GEMINI_API_KEY; "
@@ -233,21 +239,35 @@ with st.sidebar:
     with st.expander("LLM gateway status"):
         try:
             gw = llm.gateway_status()
+
             st.caption(
-                f"Strategy: {gw['strategy']} · order: {' → '.join(gw['order'])} · "
-                f"requests: {gw['requests']} · cache hits: {gw['cache_hits']}"
+                f"Strategy: {gw['strategy']} · "
+                f"order: {' → '.join(gw['order'])} · "
+                f"requests: {gw['requests']} · "
+                f"cache hits: {gw['cache_hits']}"
             )
+
             for pname, info in gw["providers"].items():
                 st.markdown(
-                    f"**{pname}** — key: {'✅' if info['configured'] else '❌'} · "
+                    f"**{pname}** — "
+                    f"key: {'✅' if info['configured'] else '❌'} · "
                     f"circuit: {info['circuit']}"
                 )
+
                 st.caption(
-                    f"models: {', '.join(info['models'])} · calls {info['calls']} · "
-                    f"ok {info['successes']} · failed {info['failures']} · "
-                    f"skipped {info['skipped']} · avg {info['avg_latency_ms']} ms"
-                    + (f" · last error: {info['last_error']}" if info["last_error"] else "")
+                    f"models: {', '.join(info['models'])} · "
+                    f"calls {info['calls']} · "
+                    f"ok {info['successes']} · "
+                    f"failed {info['failures']} · "
+                    f"skipped {info['skipped']} · "
+                    f"avg {info['avg_latency_ms']} ms"
+                    + (
+                        f" · last error: {info['last_error']}"
+                        if info["last_error"]
+                        else ""
+                    )
                 )
+
         except Exception:
             st.caption("Gateway status unavailable.")
 
@@ -272,22 +292,10 @@ with st.sidebar:
     with st.expander("LangSmith tracing diagnostics"):
         status = langsmith_config_status()
 
-        st.write(
-            "Tracing enabled:",
-            status["tracing_enabled"],
-        )
-        st.write(
-            "Endpoint configured:",
-            status["endpoint_configured"],
-        )
-        st.write(
-            "API key configured:",
-            status["api_key_configured"],
-        )
-        st.write(
-            "Project:",
-            status["project"],
-        )
+        st.write("Tracing enabled:", status["tracing_enabled"])
+        st.write("Endpoint configured:", status["endpoint_configured"])
+        st.write("API key configured:", status["api_key_configured"])
+        st.write("Project:", status["project"])
 
         if st.button(
             "Test LangSmith tracing",
@@ -312,10 +320,8 @@ with st.sidebar:
 
             else:
                 try:
-                    # Generate a trace through the decorated function.
                     result = langsmith_test_run()
 
-                    # Verify LangSmith API connectivity.
                     client = Client()
                     next(iter(client.list_projects(limit=1)), None)
 
@@ -326,9 +332,8 @@ with st.sidebar:
                     )
 
                 except Exception as exc:
-                    logger.exception(
-                        "LangSmith diagnostic failed"
-                    )
+                    logger.exception("LangSmith diagnostic failed")
+
                     st.error(
                         f"LangSmith test failed "
                         f"({type(exc).__name__}). "
@@ -350,9 +355,7 @@ with st.sidebar:
         use_container_width=True,
     ):
         if not uploaded_files:
-            st.warning(
-                "Upload at least one PDF or TXT file first."
-            )
+            st.warning("Upload at least one PDF or TXT file first.")
 
         else:
             max_file_size = 10 * 1024 * 1024
@@ -378,12 +381,8 @@ with st.sidebar:
                 try:
                     engine.use_reranker = bool(use_reranker)
 
-                    with st.spinner(
-                        "Reading and indexing documents..."
-                    ):
-                        passage_count = engine.ingest(
-                            uploaded_files
-                        )
+                    with st.spinner("Reading and indexing documents..."):
+                        passage_count = engine.ingest(uploaded_files)
 
                     st.session_state.indexed = True
                     st.session_state.indexed_files = [
@@ -400,6 +399,7 @@ with st.sidebar:
                     logger.exception(
                         "Document indexing failed in Streamlit UI"
                     )
+
                     st.error(
                         f"Indexing failed ({type(exc).__name__}). "
                         "Check application logs for details."
@@ -467,13 +467,23 @@ question = st.chat_input(
     "Ask about revenue, expenses, profit, ratios, or financial risks..."
 )
 
+
 def render_sources(contexts):
     with st.expander("Sources and retrieved passages"):
         for i, source in enumerate(contexts, start=1):
             page = source.get("page")
-            page_text = f", page {page}" if page is not None else ""
-            st.markdown(f"**{i}. {source.get('source', 'Unknown')}{page_text}**")
+            page_text = (
+                f", page {page}"
+                if page is not None
+                else ""
+            )
+
+            st.markdown(
+                f"**{i}. {source.get('source', 'Unknown')}"
+                f"{page_text}**"
+            )
             st.write(source.get("text", ""))
+
             if i < len(contexts):
                 st.divider()
 
@@ -499,12 +509,15 @@ if question:
             try:
                 engine.use_reranker = bool(use_reranker)
 
-                # Guardrail layer 1: validate the question before retrieval.
+                # Validate the question before retrieval.
                 guarded_question = question
+
                 if use_guardrails:
                     check = check_input(question)
+
                     if not check.allowed:
                         st.warning(check.message)
+
                         st.session_state.messages.append(
                             {
                                 "role": "assistant",
@@ -513,11 +526,10 @@ if question:
                             }
                         )
                         st.stop()
+
                     guarded_question = check.text
 
-                with st.spinner(
-                    "Searching financial documents..."
-                ):
+                with st.spinner("Searching financial documents..."):
                     contexts = traced_retrieve(
                         engine,
                         guarded_question,
@@ -540,18 +552,21 @@ if question:
                 if result.provider in ("groq", "gemini"):
                     st.caption(
                         f"Generated by {result.provider} · {result.model} · "
-                        + ("cached" if result.cached else f"{result.latency_ms} ms")
+                        + (
+                            "cached"
+                            if result.cached
+                            else f"{result.latency_ms} ms"
+                        )
                     )
+
                 for notice in result.notices:
-                    if " " in notice:  # human-readable notices only
+                    if " " in notice:
                         st.caption(f"🛡️ {notice}")
 
                 if result.contexts:
                     render_sources(result.contexts)
                 else:
-                    st.info(
-                        "No relevant passages were retrieved."
-                    )
+                    st.info("No relevant passages were retrieved.")
 
                 st.session_state.messages.append(
                     {

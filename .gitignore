@@ -5,7 +5,7 @@ __pycache__/
 *$py.class
 *.so
 
-# Python environments
+# Python virtual environments
 .venv/
 venv/
 env/
@@ -85,7 +85,7 @@ cython_debug/
 profile_default/
 ipython_config.py
 
-# IDE and OS files
+# IDE and operating system files
 .idea/
 .vscode/
 .spyderproject
@@ -93,9 +93,6 @@ ipython_config.py
 .ropeproject
 .DS_Store
 Thumbs.db
-
-# Streamlit local secrets
-.streamlit/secrets.toml
 
 # Generated RAG indexes and model artifacts
 *.faiss
@@ -109,8 +106,7 @@ vector_store/
 faiss_index/
 embeddings_cache/
 
-# Uploaded documents - review before ignoring
-# Uncomment if uploads contain private PDFs or user files
+# Uploaded documents: uncomment if these contain private files
 # uploads/
 # data/private/
 
@@ -119,7 +115,7 @@ embeddings_cache/
 *.sqlite3
 *.db
 
-# Other package managers
+# Other Python package managers
 .pdm-python
 .pdm-build/
 .pixi/
@@ -129,8 +125,32 @@ __pypackages__/
 /site/
 /docs/_build/
 
-# Miscellaneous
+# Celery
 celerybeat-schedule*
 celerybeat.pid
+
+# Redis
 *.rdb
 *.aof
+*.pid
+
+# Message queues
+mnesia/
+rabbitmq/
+rabbitmq-data/
+activemq-data/
+
+# SageMath
+*.sage.py
+
+# Additional application secrets and local data
+.abstra/
+instance/
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+.scrapy/
+.webassets-cache
+
+# Streamlit secrets
+.streamlit/secrets.toml

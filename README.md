@@ -1,379 +1,259 @@
-# 📊 Finance RAG Assistant
+# Finance RAG Assistant
 
-A Retrieval-Augmented Generation (RAG) application that lets users upload financial documents and ask questions about their contents through an interactive Streamlit chat interface.
+A Retrieval-Augmented Generation (RAG) application for asking questions about financial documents. Upload PDF or TXT files, retrieve relevant passages, and generate answers grounded in the retrieved content.
 
-The application combines **semantic search, BM25 keyword retrieval, hybrid ranking, and optional cross-encoder reranking** to retrieve relevant passages from financial reports. It can generate context-grounded answers using the Groq API or operate in extractive mode without making any LLM API calls.
+## Features
 
-## ✨ Features
+- **Document ingestion:** Upload PDF and TXT files.
+- **Semantic search:** Retrieve relevant document passages using embeddings.
+- **Keyword search:** Use BM25 to find relevant terms and phrases.
+- **Hybrid retrieval:** Combine semantic and keyword scores to improve retrieval.
+- **Optional reranking:** Use a cross-encoder reranker to refine retrieved results.
+- **Multiple LLM providers:** Configure Groq or Gemini, depending on the providers supported by your implementation.
+- **LLM gateway:** Centralize model-provider selection when supported by the project configuration.
+- **Guardrails:** Validate inputs, filter retrieved context, and check generated responses when enabled.
+- **Source attribution:** Display retrieved sources to help users verify answers.
+- **Extractive fallback:** Support a fallback response mode when configured.
+- **Optional LangSmith tracing:** Trace supported LLM and application operations when tracing is correctly configured.
 
-- **Interactive chat interface:** Ask questions about uploaded financial documents using Streamlit.
-- **PDF and TXT ingestion:** Extract document text while preserving source filenames and page metadata.
-- **LlamaIndex integration:** Use `Document` and `SentenceSplitter` for structured document processing and chunking, with a built-in fallback text splitter.
-- **Semantic search:** Generate dense embeddings using Sentence Transformers.
-- **BM25 keyword search:** Retrieve passages using keyword relevance, with a fallback BM25 implementation.
-- **Hybrid retrieval:** Combine semantic and keyword search rankings using a Reciprocal Rank Fusion (RRF) strategy.
-- **Optional cross-encoder reranking:** Improve the ordering of retrieved passages using a reranker model.
-- **Groq + Gemini answers (both free tiers):** Choose Groq, Gemini, or *Auto* (Groq first, automatic fallback to Gemini).
-- **LLM gateway:** one routing layer with model/provider fallback, retries with backoff, rate limits, circuit breakers, response cache, and live status in the sidebar.
-- **LLM guardrails:** Input, retrieval, and output safety layers (see below).
-- **Extractive mode:** Return relevant source passages without calling an LLM API.
-- **Source attribution:** Display retrieved passages with filenames and page numbers.
-- **Configurable retrieval:** Adjust the number of retrieved passages and enable or disable reranking.
-- **Fallback handling:** Fall back to retrieved passages when Groq is not configured or answer generation fails.
+## Tech Stack
 
-## 🛠️ Tech Stack
+- Python
+- Streamlit
+- Sentence Transformers
+- BM25 keyword retrieval
+- Cross-encoder reranking
+- Groq and/or Google Gemini
+- LangSmith for optional tracing
 
-| Technology | Purpose |
-|---|---|
-| Python | Application logic |
-| Streamlit | User interface and chat |
-| PyMuPDF | PDF text extraction |
-| LlamaIndex Core | Document processing and sentence splitting |
-| Sentence Transformers | Dense embeddings |
-| NumPy | Vector operations and similarity scoring |
-| BM25 | Keyword-based retrieval |
-| CrossEncoder | Optional passage reranking |
-| Groq API | LLM-based answer generation (free tier) |
-| Google Gemini API (`google-genai`) | LLM-based answer generation / fallback (free tier) |
-| python-dotenv | Local environment configuration |
+The exact dependencies and enabled features depend on the installed packages and the implementation in your project files.
 
-## 🏗️ Architecture
+## Project Structure
 
 ```text
-             Financial Documents
-                  PDF / TXT
-                     |
-                     v
-             Document Ingestion
-                     |
-                     v
-             Text Extraction
-          + Page and Source Metadata
-                     |
-                     v
-               Text Chunking
-                     |
-          +----------+----------+
-          |                     |
-          v                     v
-     Dense Embeddings       BM25 Index
-          |                     |
-          v                     v
-   Semantic Retrieval     Keyword Retrieval
-          |                     |
-          +----------+----------+
-                     |
-                     v
-             Hybrid Ranking
-                     |
-                     v
-          Optional Cross-Encoder
-                Reranking
-                     |
-                     v
-           Relevant Source Passages
-                     |
-                     v
-              Answer Generation
-               /            \
-              v              v
-         Groq LLM       Extractive Mode
-               \            /
-                v          v
-               Streamlit Chat
+Financial-Rag-Project/
+├── app.py
+├── rag.py
+├── config.py
+├── llm.py
+├── gateway.py
+├── guardrails.py
+├── logger.py
+├── requirements.txt
+├── README.md
+├── .env
+└── tests/
 ```
 
-*Note: The diagram describes the intended retrieval pipeline. Use Reciprocal Rank Fusion (RRF) in the implementation if you want the architecture to match the code exactly.*
+Your actual project may contain additional files or use a slightly different structure. Keep this section synchronized with the files present in your repository.
 
-## 📁 Project Structure
+## Prerequisites
 
-```text
-finance_rag_assistant/
-│
-├── app.py              # Streamlit user interface
-├── rag.py              # Document ingestion and RAG pipeline
-├── requirements.txt    # Python dependencies
-├── .env.example        # Environment variable template
-├── guardrails.py       # Input / retrieval / output guardrails
-├── gateway.py          # LLM gateway: routing, fallback, retries, limits, cache
-├── llm.py              # Thin facade over the gateway
-├── config.py           # Settings from environment variables
-├── tests/              # Guardrail and pipeline tests
-├── .gitignore          # Files excluded from Git
-└── README.md           # Project documentation
-```
+- Python 3.10 or a compatible version supported by your dependencies
+- Git
+- A Groq API key and/or Google Gemini API key, depending on the configured provider
+- Optional LangSmith API key if tracing is enabled
 
-## ⚙️ Requirements
-
-- Python 3.10 or later, compatible with your installed dependencies
-- pip
-- Internet access for downloading embedding models on first use
-- A Groq API key for LLM-based answer generation; optional for extractive mode
-
-## 🚀 Installation on Windows
+## Installation
 
 ### 1. Clone the repository
 
-```powershell
+```bash
 git clone https://github.com/TusharK93/Financial-Rag-Project.git
 cd Financial-Rag-Project
 ```
 
 ### 2. Create a virtual environment
 
-```powershell
-py -m venv .venv
-```
-
-### 3. Activate the environment
-
-For PowerShell:
+**Windows PowerShell:**
 
 ```powershell
-.\.venv\Scripts\Activate.ps1
+python -m venv venv
+.\venv\Scripts\Activate.ps1
 ```
 
-If PowerShell blocks script execution, you can activate the environment using Command Prompt instead:
+If PowerShell blocks activation, you can use Command Prompt:
 
-```cmd
-.venv\Scripts\activate.bat
+```bat
+venv\Scripts\activate.bat
 ```
 
-### 4. Install dependencies
+### 3. Install dependencies
 
-```powershell
+```bash
 python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
+pip install -r requirements.txt
 ```
 
-### 5. Configure environment variables
+If installation fails, check that your Python version is compatible with the packages in `requirements.txt`.
 
-Copy the example environment file:
+### 4. Configure environment variables
 
-```powershell
-Copy-Item .env.example .env
-```
+Create a `.env` file in the project root.
 
-Add your Groq API key to `.env`:
+Example:
 
 ```dotenv
-GROQ_API_KEY=your_groq_api_key_here          # free: https://console.groq.com/keys
-GROQ_MODEL=gemini-3.8-flash
-GEMINI_API_KEY=your_gemini_api_key_here      # free: https://aistudio.google.com/apikey
-GEMINI_MODEL=gemini-flash-latest
-LLM_PROVIDER=auto                            # auto | groq | gemini
-GUARDRAILS_ENABLED=true
+# LLM provider: auto, groq, or gemini
+LLM_PROVIDER=auto
+
+# Groq
+GROQ_API_KEY=your_groq_api_key
+GROQ_MODEL=openai/gpt-oss-20b
+
+# Google Gemini
+GOOGLE_API_KEY=your_google_api_key
+GEMINI_MODEL=your_supported_gemini_model
+
+# Embeddings and reranking
 EMBED_MODEL=sentence-transformers/all-MiniLM-L6-v2
 RERANK_MODEL=BAAI/bge-reranker-base
+
+# Optional LangSmith tracing
+LANGCHAIN_TRACING_V2=true
+LANGCHAIN_API_KEY=your_langsmith_api_key
+LANGCHAIN_PROJECT=finance-rag-assistant
 ```
 
-The selected Groq model must be available to your account. Change `GROQ_MODEL` if necessary.
+Use model identifiers supported by the relevant provider and by your implementation. The example model names are configuration examples, not a guarantee that every model is available to every account or API.
 
-**Security:** Never commit `.env` or expose your API key in source code, screenshots, logs, or a public repository.
+**Important:** Never commit real API keys or passwords to GitHub. Add `.env` to `.gitignore`. If a real key has already been exposed or committed, revoke or rotate it.
 
-### 6. Run the application
+## Run the Application
 
-```powershell
+From the project root, activate your virtual environment and run:
+
+```bash
 streamlit run app.py
 ```
 
-Streamlit will print a local URL, usually:
+Streamlit will display a local URL, typically:
 
 ```text
 http://localhost:8501
 ```
 
-Open that address in your browser.
+Open that URL in your browser.
 
-## 💬 How to Use
+## How It Works
 
-1. Start the Streamlit application.
-2. Upload one or more PDF or TXT financial documents.
-3. Click the document indexing button in the sidebar.
-4. Wait for text extraction, chunking, and embedding generation to finish.
-5. Choose the number of passages to retrieve.
-6. Optionally enable cross-encoder reranking.
-7. Select Groq-powered answer generation or extractive mode.
-8. Ask questions about the uploaded documents.
-9. Review the answer and the source passages used to support it.
+1. **Upload documents:** The user uploads financial documents.
+2. **Extract text:** The application reads text from supported files.
+3. **Split text into chunks:** The extracted text is divided into smaller passages.
+4. **Create embeddings:** The embedding model represents passages as vectors.
+5. **Retrieve relevant passages:** Semantic retrieval and BM25 keyword retrieval identify candidate passages.
+6. **Combine retrieval scores:** The application combines normalized semantic and keyword scores according to the implementation in `rag.py`.
+7. **Rerank candidates:** If configured, a cross-encoder reranks the retrieved passages.
+8. **Generate an answer:** The selected LLM uses the retrieved context to answer the question.
+9. **Apply guardrails:** Configured checks validate the input, retrieved context, or generated answer.
+10. **Show sources:** The application presents source information where available.
 
-Example questions:
+### Retrieval Scoring
 
-- What was the company's total revenue?
-- How did operating expenses change during the reporting period?
-- What risks are discussed in the annual report?
-- Summarize the company's cash flow position.
-- Which page mentions outstanding debt?
-- Compare the financial figures reported in the retrieved passages.
-
-Answers depend on the content of the documents you upload. The assistant should not be treated as a substitute for professional financial advice.
-
-## 🚪 LLM Gateway (`gateway.py`, `llm.py`)
-
-All LLM calls go through one gateway in front of the Groq and Gemini free tiers:
-
-| Capability | Behaviour |
-|---|---|
-| **Routing** | `LLM_STRATEGY=priority` tries providers in `LLM_PROVIDER_ORDER` (default `groq,gemini`); `round_robin` alternates to spread free-tier quota. Picking Groq or Gemini in the sidebar pins that provider. |
-| **Fallback** | On rate limit / missing model it tries the next model of the same provider (`GROQ_FALLBACK_MODELS`, `GEMINI_FALLBACK_MODELS`), then the next provider. |
-| **Retries** | Exponential backoff with jitter on timeouts / 5xx only. Auth errors are never retried. |
-| **Rate limiting** | Client-side requests-per-minute bucket per provider (`GROQ_RPM`, `GEMINI_RPM`), kept below free-tier caps. A throttled provider is skipped, not waited on. |
-| **Circuit breaker** | After `LLM_CIRCUIT_FAILURES` consecutive failures a provider is paused for `LLM_CIRCUIT_COOLDOWN_SECONDS` (bad API keys pause 5× longer). |
-| **Cache** | Identical prompts are served from an in-memory TTL cache (`LLM_CACHE_TTL_SECONDS`, `LLM_CACHE_SIZE`; set either to 0 to disable). |
-| **Metrics** | Calls, failures, skips, average latency and circuit state per provider in the sidebar's *LLM gateway status*. |
-
-The gateway is process-wide, so limits, breakers and cache are shared by all sessions. If every provider fails, the app shows the retrieved passages instead of an error.
-
-## 🛡️ LLM Guardrails (`guardrails.py`)
-
-| Layer | What it does |
-|---|---|
-| **Input** | Rejects empty/oversized questions, prompt-injection and jailbreak attempts, and how-to requests for fraud, money laundering, insider trading, tax evasion, or market manipulation. Masks API keys, card numbers (Luhn-checked), SSN/Aadhaar/PAN and emails before anything is sent to an LLM. |
-| **Retrieval** | Ignores passages unrelated to the question and strips instruction-like text hidden inside uploaded documents (indirect prompt injection). Context is passed to the model inside `<context>` tags as untrusted data. |
-| **Output** | Blocks system-prompt leaks, redacts secrets, flags figures that do not appear in the retrieved sources, and adds a "not financial advice" notice for investment-advice questions. |
-
-Guardrails are regex/heuristic based (no extra dependencies, no extra API calls). Toggle them in the sidebar or with `GUARDRAILS_ENABLED=false`. They reduce risk but are not a guarantee; always verify figures against the sources.
-
-## 🧪 Tests
-
-```bash
-pip install pytest
-python -m pytest tests
-```
-
-## 🔍 Retrieval Pipeline
-
-### 1. Document ingestion
-
-PDF text is extracted with PyMuPDF, while TXT files are decoded as UTF-8. The application preserves the source filename and page number for each chunk.
-
-### 2. Text chunking
-
-Documents are divided into smaller passages to improve retrieval relevance. LlamaIndex's `SentenceSplitter` is used when available; otherwise, a built-in overlapping text splitter is used.
-
-### 3. Dense retrieval
-
-Sentence Transformers converts document passages and user questions into vector embeddings. Similarity scores help identify semantically relevant passages, including passages that use different wording from the query.
-
-### 4. BM25 keyword retrieval
-
-BM25 ranks passages according to keyword matches and term frequency. A fallback implementation is provided if an external BM25 package is unavailable.
-
-### 5. Hybrid ranking
-
-Semantic and keyword retrieval can complement one another. Reciprocal Rank Fusion (RRF), when implemented in the retrieval code, combines ranked results using:
+If your current `rag.py` uses a weighted normalized score, the combination can be represented as:
 
 \[
-\operatorname{RRF}(d)=
-\sum_{r \in R}
-\frac{1}{k+\operatorname{rank}_r(d)}
+S(d)=0.65S_{\text{semantic}}(d)+0.35S_{\text{BM25}}(d)
 \]
 
-Here, \(d\) is a document passage, \(R\) is the set of retrieval rankings, and \(k\) is a ranking constant.
+Here, both scores should be normalized or otherwise made comparable before combination. This formula describes the weighted scoring implementation; it is not Reciprocal Rank Fusion (RRF).
 
-### 6. Optional reranking
+## LLM Provider Configuration
 
-A cross-encoder evaluates the question and candidate passages together to refine their order. Reranking may improve relevance but requires additional model resources.
+Set `LLM_PROVIDER` in `.env` according to the provider-selection logic implemented in your project.
 
-### 7. Answer generation
+- `groq`: Use Groq if supported by your `llm.py` or gateway.
+- `gemini`: Use Google Gemini if supported by your implementation.
+- `auto`: Let the application choose a provider only if automatic selection is implemented.
 
-In Groq mode, the retrieved passages are provided as context to a configurable chat model. In extractive mode, the application returns retrieved passages directly without calling an LLM API.
+The variable names in `.env` must match the names actually read by your Python files. If your code uses a different name, update either the configuration or the code consistently.
 
-## ☁️ Deployment on Streamlit Community Cloud
+## Optional LangSmith Tracing
 
-### 1. Push the project to GitHub
+To enable LangSmith tracing, configure the appropriate environment variables:
 
-Ensure your repository includes:
-
-- `app.py`
-- `rag.py`
-- `requirements.txt`
-- `README.md`
-- `.env.example`
-
-Do not commit your real `.env` file.
-
-### 2. Create the Streamlit app
-
-Visit [Streamlit Community Cloud](https://share.streamlit.io/), sign in, and create a new app using your GitHub repository.
-
-Select the appropriate branch and set the main file path to:
-
-```text
-app.py
+```dotenv
+LANGCHAIN_TRACING_V2=true
+LANGCHAIN_API_KEY=your_langsmith_api_key
+LANGCHAIN_PROJECT=finance-rag-assistant
 ```
 
-### 3. Configure secrets
+Tracing requires more than setting environment variables. Ensure that the relevant LLM or application calls are instrumented using supported LangSmith integrations or tracing decorators. Confirm that the API key is valid and that the process can access the LangSmith service.
 
-Open your app's settings and add the Groq API key under **Secrets**:
+If traces do not appear, check:
 
-```toml
-GROQ_API_KEY = "your_groq_api_key_here"
-GROQ_MODEL = "gemini-3.8-flash"
-GEMINI_API_KEY = "your_gemini_api_key_here"
-GEMINI_MODEL = "gemini-flash-latest"
-```
+- The environment variables are loaded before the traced calls execute.
+- The tracing flag is enabled.
+- The correct API key and project name are being used.
+- The code path actually invokes an instrumented operation.
+- No exception or configuration issue is preventing trace submission.
 
-Use the model identifier currently supported by your Groq account. The `python-dotenv` package does not automatically load Streamlit Cloud's Secrets into environment variables; if the application relies on `os.getenv()`, make sure the code reads Streamlit secrets or maps them into its configuration.
+## Deployment
 
-### 4. Deploy
+You can deploy the application to a hosting platform that supports Python and Streamlit.
 
-Deploy the application and check the logs if startup fails. Start with reranking disabled to reduce memory consumption and model-download requirements.
+General deployment steps:
 
-Hosting limits, available memory, inference quotas, and API pricing may change over time.
+1. Push the project to a GitHub repository.
+2. Create an application on your chosen hosting platform.
+3. Connect the repository and select the appropriate branch.
+4. Configure the start command, typically:
 
-## 🔐 Security Best Practices
+   ```bash
+   streamlit run app.py --server.port $PORT --server.address 0.0.0.0
+   ```
 
-- Keep API keys in local environment variables or your hosting provider's secret manager.
-- Add `.env` and `.venv/` to `.gitignore`.
-- Never commit credentials or private financial documents.
-- Do not assume uploaded documents are confidential merely because they are processed by a RAG application.
-- Review your hosting provider's data handling and retention policies before uploading sensitive documents.
+5. Add API keys and other environment variables through the platform's secret or environment-variable settings.
+6. Install dependencies from `requirements.txt`.
+7. Deploy and inspect the application logs.
 
-Recommended `.gitignore` entries:
+The start command and port configuration may need to be adjusted for your hosting platform. Do not store API keys in source code or public repository files.
 
-```gitignore
-.env
-.venv/
-__pycache__/
-*.py[cod]
-.streamlit/secrets.toml
-```
+## Troubleshooting
 
-## ⚠️ Limitations
+### Missing API key
 
-- **Scanned PDFs:** Image-only documents require OCR, which is not included.
-- **In-memory index:** Indexed documents are not persisted across application restarts and may need to be uploaded and indexed again.
-- **Model downloads:** Embedding and reranker models may require substantial download time, disk space, and memory.
-- **Free hosting constraints:** Large documents, reranking, and model initialization may exceed available resources.
-- **Retrieval accuracy:** Incorrect, incomplete, or poorly extracted source text can reduce answer quality.
-- **LLM dependency:** Groq-generated answers require a valid API key, network access, model availability, and sufficient account quota.
-- **Extractive mode:** This mode returns retrieved passages rather than synthesizing a complete answer.
-- **Financial reliability:** Verify important figures and decisions against the original financial statements.
+Check that the required key is present in `.env` locally or in the deployment platform's environment settings. Confirm that the variable name matches the name read by your code.
 
-## 🛣️ Future Improvements
+### Model not found
 
-- Add OCR support for scanned financial reports.
-- Persist indexes to avoid reprocessing documents after restarts.
-- Implement and evaluate Reciprocal Rank Fusion (RRF) against alternative hybrid-ranking methods.
-- Add document-level comparisons and financial metric extraction.
-- Add automated retrieval evaluation and answer-quality tests.
-- Improve streaming responses and error reporting.
-- Add authentication and access controls for private documents.
+Verify the model identifier, provider access, and compatibility with the installed SDK.
 
-## 🤝 Contributing
+### No relevant documents retrieved
 
-Contributions, bug reports, and suggestions are welcome.
+Check that text extraction succeeded, chunks were created, embeddings were generated, and the retrieval thresholds and scoring logic are appropriate.
 
-1. Fork the repository.
-2. Create a feature branch.
-3. Make and test your changes.
-4. Submit a pull request describing the changes.
+### Tracing does not appear
 
-## 📄 License
+Verify LangSmith configuration and confirm that the relevant calls are instrumented. Setting environment variables alone does not guarantee traces.
 
-Add a `LICENSE` file to specify how this project may be used, modified, and distributed.
+### Dependency installation fails
 
----
+Check the Python version, package versions, and any platform-specific dependencies.
 
-**Built with Python, Streamlit, Sentence Transformers, and Groq.**
+## Security Notes
+
+- Keep `.env` out of version control.
+- Never expose API keys in source code, screenshots, logs, or public issue reports.
+- Rotate credentials that have been exposed.
+- Validate uploaded files and enforce reasonable file-size limits.
+- Avoid logging sensitive financial document content.
+- Apply appropriate access controls before deploying the application for multiple users.
+
+## Limitations
+
+- Generated answers may be inaccurate or incomplete.
+- Retrieval quality depends on text extraction, chunking, embeddings, and ranking.
+- Scanned PDFs may require OCR support if the current implementation does not extract their text.
+- Model availability, rate limits, and costs depend on the selected provider.
+- Source attribution helps verification but does not guarantee that every answer is fully supported by its sources.
+
+## License
+
+Add the license and usage terms applicable to this repository.
+
+## Author
+
+**Tushar Kumawat**
+
+GitHub: [TusharK93](https://github.com/TusharK93)
