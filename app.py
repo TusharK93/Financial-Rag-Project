@@ -1,0 +1,583 @@
+
+import os
+
+import streamlit as st
+from dotenv import load_dotenv
+
+# =========================================================
+# 1. PAGE CONFIGURATION
+# =========================================================
+
+st.set_page_config(
+    page_title="Finance RAG Assistant",
+    page_icon="📊",
+    layout="wide",
+)
+
+# =========================================================
+# 2. ENVIRONMENT VARIABLES AND STREAMLIT SECRETS
+# =========================================================
+
+load_dotenv(override=False)
+
+# Load configuration from Streamlit Secrets (LLM keys + LangSmith).
+# Never print or display API keys.
+for key in (
+    "GROQ_API_KEY",
+    "GROQ_MODEL",
+    "GEMINI_API_KEY",
+    "GOOGLE_API_KEY",
+    "GEMINI_MODEL",
+    "LLM_PROVIDER",
+    "GUARDRAILS_ENABLED",
+    "LANGSMITH_TRACING",
+    "LANGSMITH_ENDPOINT",
+    "LANGSMITH_API_KEY",
+    "LANGSMITH_PROJECT",
+):
+    try:
+        value = st.secrets.get(key)
+
+        if value is not None and str(value).strip():
+            os.environ[key] = str(value).strip()
+
+    except Exception:
+        # Streamlit Secrets may not be configured locally.
+        pass
+
+# Only trace by default when a LangSmith key exists (avoids noisy errors otherwise).
+os.environ.setdefault(
+    "LANGSMITH_TRACING",
+    "true" if os.getenv("LANGSMITH_API_KEY", "").strip() else "false",
+)
+os.environ.setdefault(
+    "LANGSMITH_ENDPOINT",
+    "https://api.smith.langchain.com",
+)
+os.environ.setdefault(
+    "LANGSMITH_PROJECT",
+    "finance-rag-assistant",
+)
+
+# =========================================================
+# 3. IMPORT APPLICATION MODULES
+# No NLTK corpus setup is required in this file.
+# =========================================================
+
+try:
+    import config
+    import llm
+    from guardrails import check_input
+    from logger import logger
+    from rag import Client, FinanceRAG, generate_answer, traceable
+
+except Exception as exc:
+    st.error(
+        "Application imports failed. Check requirements.txt "
+        "and the deployment logs."
+    )
+    st.exception(exc)
+    st.stop()
+
+# =========================================================
+# 4. LANGSMITH DIAGNOSTICS
+# =========================================================
+
+def langsmith_config_status():
+    """Return configuration status without exposing credentials."""
+
+    tracing_value = os.getenv("LANGSMITH_TRACING", "").strip().lower()
+
+    return {
+        "tracing_enabled": tracing_value in {"true", "1", "yes"},
+        "endpoint_configured": bool(
+            os.getenv("LANGSMITH_ENDPOINT", "").strip()
+        ),
+        "api_key_configured": bool(
+            os.getenv("LANGSMITH_API_KEY", "").strip()
+        ),
+        "project": os.getenv(
+            "LANGSMITH_PROJECT",
+            "finance-rag-assistant",
+        ),
+    }
+
+
+@traceable(name="streamlit_langsmith_test")
+def langsmith_test_run():
+    """Generate a small LangSmith trace."""
+    return {"status": "success"}
+
+
+# =========================================================
+# 5. TRACED RAG FUNCTIONS
+# =========================================================
+
+@traceable(
+    name="finance_rag_retrieval",
+    hide_inputs=True,
+    hide_outputs=True,
+)
+def traced_retrieve(engine, question, top_k):
+    """Retrieve relevant passages from indexed documents."""
+    return engine.retrieve(question, top_k=top_k)
+
+
+@traceable(
+    name="finance_rag_answer",
+    hide_inputs=True,
+    hide_outputs=True,
+)
+def traced_answer(question, contexts, provider, use_llm, use_guardrails):
+    """Generate a guardrailed answer from retrieved passages."""
+    return generate_answer(
+        question,
+        contexts,
+        provider=provider,
+        use_llm=use_llm,
+        fallback_on_error=True,
+        use_guardrails=use_guardrails,
+    )
+
+
+# =========================================================
+# 6. MAIN PAGE
+# =========================================================
+
+st.title("📊 Finance RAG Assistant")
+
+st.caption(
+    "Ask questions about your financial reports using "
+    "document-grounded answers."
+)
+
+# =========================================================
+# 7. SESSION STATE
+# =========================================================
+
+if "finance_rag" not in st.session_state:
+    st.session_state.finance_rag = FinanceRAG(
+        use_reranker=False
+    )
+
+if "indexed" not in st.session_state:
+    st.session_state.indexed = False
+
+if "indexed_files" not in st.session_state:
+    st.session_state.indexed_files = []
+
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+engine = st.session_state.finance_rag
+
+# =========================================================
+# 8. SIDEBAR
+# =========================================================
+
+with st.sidebar:
+    st.header("Document settings")
+
+    uploaded_files = st.file_uploader(
+        "Upload financial documents",
+        type=["pdf", "txt"],
+        accept_multiple_files=True,
+        help="PDF and TXT files are supported.",
+    )
+
+    use_reranker = st.checkbox(
+        "Use cross-encoder reranking",
+        value=False,
+        help=(
+            "Uses additional memory. Keep disabled on "
+            "small-memory deployments."
+        ),
+    )
+
+    top_k = st.slider(
+        "Passages to retrieve",
+        min_value=1,
+        max_value=5,
+        value=3,
+    )
+
+    provider_options = {
+        "Auto (gateway: Groq → Gemini)": "auto",
+        "Groq (Llama, free)": "groq",
+        "Gemini (Flash, free)": "gemini",
+        "Extractive (no API)": "extractive",
+    }
+    answer_mode = st.radio(
+        "Answer mode",
+        options=list(provider_options),
+        index=0,
+        help=(
+            "Groq and Gemini generate answers from retrieved passages. "
+            "Auto tries Groq first and falls back to Gemini. "
+            "Extractive mode returns retrieved text without an LLM API call."
+        ),
+    )
+    provider = provider_options[answer_mode]
+
+    keys = llm.available_providers()
+    st.caption(
+        f"Groq key: {'✅' if keys['groq'] else '❌'} · "
+        f"Gemini key: {'✅' if keys['gemini'] else '❌'}"
+    )
+    if provider != "extractive" and not any(keys.values()):
+        st.warning(
+            "No LLM key found. Set GROQ_API_KEY and/or GEMINI_API_KEY; "
+            "until then answers fall back to retrieved passages."
+        )
+
+    with st.expander("LLM gateway status"):
+        try:
+            gw = llm.gateway_status()
+            st.caption(
+                f"Strategy: {gw['strategy']} · order: {' → '.join(gw['order'])} · "
+                f"requests: {gw['requests']} · cache hits: {gw['cache_hits']}"
+            )
+            for pname, info in gw["providers"].items():
+                st.markdown(
+                    f"**{pname}** — key: {'✅' if info['configured'] else '❌'} · "
+                    f"circuit: {info['circuit']}"
+                )
+                st.caption(
+                    f"models: {', '.join(info['models'])} · calls {info['calls']} · "
+                    f"ok {info['successes']} · failed {info['failures']} · "
+                    f"skipped {info['skipped']} · avg {info['avg_latency_ms']} ms"
+                    + (f" · last error: {info['last_error']}" if info["last_error"] else "")
+                )
+        except Exception:
+            st.caption("Gateway status unavailable.")
+
+    use_guardrails = st.checkbox(
+        "Enable LLM guardrails",
+        value=config.GUARDRAILS_ENABLED,
+        help=(
+            "Blocks prompt injection and harmful requests, masks sensitive data, "
+            "ignores unrelated or booby-trapped passages, and flags figures "
+            "that are not found in the sources."
+        ),
+    )
+
+    st.caption(
+        "Tip: Start with one small PDF while testing deployment."
+    )
+
+    # -----------------------------------------------------
+    # LangSmith diagnostics
+    # -----------------------------------------------------
+
+    with st.expander("LangSmith tracing diagnostics"):
+        status = langsmith_config_status()
+
+        st.write(
+            "Tracing enabled:",
+            status["tracing_enabled"],
+        )
+        st.write(
+            "Endpoint configured:",
+            status["endpoint_configured"],
+        )
+        st.write(
+            "API key configured:",
+            status["api_key_configured"],
+        )
+        st.write(
+            "Project:",
+            status["project"],
+        )
+
+        if st.button(
+            "Test LangSmith tracing",
+            use_container_width=True,
+        ):
+            if not status["tracing_enabled"]:
+                st.error(
+                    "Tracing is disabled. "
+                    "Set LANGSMITH_TRACING to true."
+                )
+
+            elif not status["api_key_configured"]:
+                st.error(
+                    "LangSmith API key is missing. "
+                    "Check Streamlit Cloud Secrets."
+                )
+
+            elif not status["endpoint_configured"]:
+                st.error(
+                    "LangSmith endpoint is not configured."
+                )
+
+            else:
+                try:
+                    # Generate a trace through the decorated function.
+                    result = langsmith_test_run()
+
+                    # Verify LangSmith API connectivity.
+                    client = Client()
+                    next(iter(client.list_projects(limit=1)), None)
+
+                    st.success(
+                        f"Diagnostic function returned {result}. "
+                        "The LangSmith API request succeeded. "
+                        "Check your LangSmith project for the trace."
+                    )
+
+                except Exception as exc:
+                    logger.exception(
+                        "LangSmith diagnostic failed"
+                    )
+                    st.error(
+                        f"LangSmith test failed "
+                        f"({type(exc).__name__}). "
+                        "Check application logs for details."
+                    )
+
+        st.caption(
+            "An API request succeeding does not guarantee that "
+            "the trace has already appeared in the project."
+        )
+
+    # -----------------------------------------------------
+    # Index documents
+    # -----------------------------------------------------
+
+    if st.button(
+        "Index documents",
+        type="primary",
+        use_container_width=True,
+    ):
+        if not uploaded_files:
+            st.warning(
+                "Upload at least one PDF or TXT file first."
+            )
+
+        else:
+            max_file_size = 10 * 1024 * 1024
+
+            oversized = [
+                file.name
+                for file in uploaded_files
+                if file.size > max_file_size
+            ]
+
+            if oversized:
+                st.error(
+                    "These files exceed the 10 MB limit: "
+                    + ", ".join(oversized)
+                )
+
+                logger.warning(
+                    "Upload rejected due to size limit: %s",
+                    oversized,
+                )
+
+            else:
+                try:
+                    engine.use_reranker = bool(use_reranker)
+
+                    with st.spinner(
+                        "Reading and indexing documents..."
+                    ):
+                        passage_count = engine.ingest(
+                            uploaded_files
+                        )
+
+                    st.session_state.indexed = True
+                    st.session_state.indexed_files = [
+                        file.name for file in uploaded_files
+                    ]
+                    st.session_state.messages = []
+
+                    st.success(
+                        f"Indexed {len(uploaded_files)} file(s) "
+                        f"into {passage_count} passages."
+                    )
+
+                except Exception as exc:
+                    logger.exception(
+                        "Document indexing failed in Streamlit UI"
+                    )
+                    st.error(
+                        f"Indexing failed ({type(exc).__name__}). "
+                        "Check application logs for details."
+                    )
+
+    if st.session_state.indexed:
+        st.success("Documents are indexed.")
+
+        with st.expander("Indexed files"):
+            for filename in st.session_state.indexed_files:
+                st.write(f"📄 {filename}")
+
+    if st.button(
+        "Clear chat",
+        use_container_width=True,
+    ):
+        st.session_state.messages = []
+        st.rerun()
+
+    st.divider()
+
+    st.caption(
+        "Privacy: With Groq or Gemini selected, your question and retrieved "
+        "excerpts are sent to that provider (free tiers may use data to improve "
+        "their products). The traced RAG wrappers hide their inputs and outputs "
+        "by default; other tracing inside rag.py may behave differently."
+    )
+
+# =========================================================
+# 9. DISPLAY CHAT HISTORY
+# =========================================================
+
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
+
+        sources = message.get("sources", [])
+
+        if message["role"] == "assistant" and sources:
+            with st.expander("Sources and retrieved passages"):
+                for i, source in enumerate(sources, start=1):
+                    page = source.get("page")
+                    page_text = (
+                        f", page {page}"
+                        if page is not None
+                        else ""
+                    )
+
+                    st.markdown(
+                        f"**{i}. "
+                        f"{source.get('source', 'Unknown')}"
+                        f"{page_text}**"
+                    )
+
+                    st.write(source.get("text", ""))
+
+                    if i < len(sources):
+                        st.divider()
+
+# =========================================================
+# 10. CHAT AND RAG EXECUTION
+# =========================================================
+
+question = st.chat_input(
+    "Ask about revenue, expenses, profit, ratios, or financial risks..."
+)
+
+def render_sources(contexts):
+    with st.expander("Sources and retrieved passages"):
+        for i, source in enumerate(contexts, start=1):
+            page = source.get("page")
+            page_text = f", page {page}" if page is not None else ""
+            st.markdown(f"**{i}. {source.get('source', 'Unknown')}{page_text}**")
+            st.write(source.get("text", ""))
+            if i < len(contexts):
+                st.divider()
+
+
+if question:
+    if not st.session_state.indexed or not engine.chunks:
+        st.warning(
+            "Upload and index documents before asking a question."
+        )
+
+    else:
+        st.session_state.messages.append(
+            {
+                "role": "user",
+                "content": question,
+            }
+        )
+
+        with st.chat_message("user"):
+            st.markdown(question)
+
+        with st.chat_message("assistant"):
+            try:
+                engine.use_reranker = bool(use_reranker)
+
+                # Guardrail layer 1: validate the question before retrieval.
+                guarded_question = question
+                if use_guardrails:
+                    check = check_input(question)
+                    if not check.allowed:
+                        st.warning(check.message)
+                        st.session_state.messages.append(
+                            {
+                                "role": "assistant",
+                                "content": check.message,
+                                "sources": [],
+                            }
+                        )
+                        st.stop()
+                    guarded_question = check.text
+
+                with st.spinner(
+                    "Searching financial documents..."
+                ):
+                    contexts = traced_retrieve(
+                        engine,
+                        guarded_question,
+                        top_k,
+                    )
+
+                use_llm = provider != "extractive"
+
+                with st.spinner("Preparing your answer..."):
+                    result = traced_answer(
+                        guarded_question,
+                        contexts,
+                        provider if use_llm else "auto",
+                        use_llm,
+                        use_guardrails,
+                    )
+
+                st.markdown(result.answer)
+
+                if result.provider in ("groq", "gemini"):
+                    st.caption(
+                        f"Generated by {result.provider} · {result.model} · "
+                        + ("cached" if result.cached else f"{result.latency_ms} ms")
+                    )
+                for notice in result.notices:
+                    if " " in notice:  # human-readable notices only
+                        st.caption(f"🛡️ {notice}")
+
+                if result.contexts:
+                    render_sources(result.contexts)
+                else:
+                    st.info(
+                        "No relevant passages were retrieved."
+                    )
+
+                st.session_state.messages.append(
+                    {
+                        "role": "assistant",
+                        "content": result.answer,
+                        "sources": result.contexts,
+                    }
+                )
+
+            except Exception as exc:
+                logger.exception(
+                    "Chat request failed in Streamlit UI"
+                )
+
+                error_message = (
+                    f"Something went wrong ({type(exc).__name__}). "
+                    "Please try again. Check application logs "
+                    "if the issue persists."
+                )
+
+                st.error(error_message)
+
+                st.session_state.messages.append(
+                    {
+                        "role": "assistant",
+                        "content": error_message,
+                        "sources": [],
+                    }
+                )
