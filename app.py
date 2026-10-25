@@ -1,5 +1,6 @@
 
 import os
+import uuid
 
 import streamlit as st
 from dotenv import load_dotenv
@@ -34,6 +35,8 @@ for key in (
     "LANGSMITH_ENDPOINT",
     "LANGSMITH_API_KEY",
     "LANGSMITH_PROJECT",
+    "LANGSMITH_LOG_CONTENT",
+    "INAPP_EVALS",
 ):
     try:
         value = st.secrets.get(key)
@@ -71,6 +74,8 @@ try:
     import llm
     from guardrails import check_input
     from logger import logger
+    import evaluators
+    import tracing
     from rag import Client, FinanceRAG, generate_answer, traceable
 
 except Exception as exc:
@@ -115,31 +120,8 @@ def langsmith_test_run():
 # 5. TRACED RAG FUNCTIONS
 # =========================================================
 
-@traceable(
-    name="finance_rag_retrieval",
-    hide_inputs=True,
-    hide_outputs=True,
-)
-def traced_retrieve(engine, question, top_k):
-    """Retrieve relevant passages from indexed documents."""
-    return engine.retrieve(question, top_k=top_k)
-
-
-@traceable(
-    name="finance_rag_answer",
-    hide_inputs=True,
-    hide_outputs=True,
-)
-def traced_answer(question, contexts, provider, use_llm, use_guardrails):
-    """Generate a guardrailed answer from retrieved passages."""
-    return generate_answer(
-        question,
-        contexts,
-        provider=provider,
-        use_llm=use_llm,
-        fallback_on_error=True,
-        use_guardrails=use_guardrails,
-    )
+# The traced RAG pipeline (retrieval + answer in one root run) lives in tracing.py,
+# so LangSmith evaluators can read the question, answer and retrieved context.
 
 
 # =========================================================
@@ -529,23 +511,22 @@ if question:
 
                     guarded_question = check.text
 
-                with st.spinner("Searching financial documents..."):
-                    contexts = traced_retrieve(
+                use_llm = provider != "extractive"
+                run_id = uuid.uuid4()
+
+                with st.spinner("Searching documents and preparing your answer..."):
+                    result = tracing.finance_rag_chat(
                         engine,
                         guarded_question,
                         top_k,
-                    )
-
-                use_llm = provider != "extractive"
-
-                with st.spinner("Preparing your answer..."):
-                    result = traced_answer(
-                        guarded_question,
-                        contexts,
                         provider if use_llm else "auto",
                         use_llm,
                         use_guardrails,
+                        run_id=run_id,
                     )
+
+                # Optional: in-app scoring (INAPP_EVALS=true). Runs in the background.
+                evaluators.evaluate_async(run_id, guarded_question, result)
 
                 st.markdown(result.answer)
 
