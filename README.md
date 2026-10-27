@@ -529,6 +529,8 @@ The assistant is a research aid, not a substitute for professional financial, le
 
 ---
 
+<p align="center">
+  <img src="finance_rag_assistant_pipeline.gif" alt="Financial Rag Assistant end-to-end ML pipeline" width="100%">
+</p>
 ⭐ If you find this project useful, consider starring the repository.
 
-**Disclaimer:** This project is intended for educational, research, and information-retrieval purposes. Generated responses should be checked against the original documents before being used for consequential financial decisions.
