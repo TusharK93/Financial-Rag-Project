@@ -1,4 +1,4 @@
-# 💹 Finance RAG Assistant | AI-Powered Financial Research
+# 💹 Finance RAG Assistant | AI-Powered Financial Research (End-To-End)
 
 An end-to-end **Retrieval-Augmented Generation (RAG)** application that enables users to ask natural-language questions about financial reports and documents. Built with Python, semantic embeddings, BM25 keyword search, cross-encoder reranking, and LLMs, the assistant retrieves relevant passages and generates context-grounded answers with source citations.
 
